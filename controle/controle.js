@@ -16,7 +16,7 @@
   // a página do Wilson tem o próprio visual: preto e dourado, como o logo do aperto de mãos
   U.aparencia({ tema: "escuro", estilo: "elegante", fonte: "inter" });
 
-  const linkApp = () => new URL("../app/", location.href).href;
+  const linkApp = (b) => new URL("../app/" + (b && b.slug ? "?b=" + encodeURIComponent(b.slug) : ""), location.href).href;
   const linkCliente = (slug) => new URL("../c/?b=" + encodeURIComponent(slug), location.href).href;
 
   function situacao(b) {
@@ -36,7 +36,7 @@
     const linhas = [
       `Olá! O sistema da *${b.nome}* está pronto.${(b.tipo || "barbearia") === "barbearia" ? " ✂️" : ""}`,
       "",
-      `*Seu painel:* ${linkApp()}`,
+      `*Seu painel:* ${linkApp(b)}`,
       `*E-mail:* ${b.email}`,
     ];
     if (c) {
