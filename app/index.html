@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1d5fae">
 <meta name="robots" content="noindex">
 <title>Painel</title>
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="manifest" id="manifesto" href="manifest.webmanifest">
 <link rel="icon" href="icones/icone-32.png">
 <link rel="apple-touch-icon" href="icones/icone-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -18,10 +18,22 @@
 <link rel="stylesheet" href="../css/cardapio.css">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="../css/elegante.css">
+<script src="../config.js"></script>
+<script>
+  /* Painel com link próprio (app/?b=apelido): o app instalado leva o nome e o logo do negócio. */
+  (function () {
+    var b = (new URLSearchParams(location.search).get("b") || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
+    try { if (b) localStorage.setItem("bs_painel_b", b); else b = localStorage.getItem("bs_painel_b") || ""; } catch (e) { /* sem armazenamento */ }
+    var C = window.CONFIG || {};
+    if (!b || !C.SUPABASE_URL) return;
+    var base = location.origin + location.pathname.replace(/[^/]*$/, "");
+    document.getElementById("manifesto").href = String(C.SUPABASE_URL).trim().replace(/\/+$/, "").replace(/\/(rest|auth|functions|storage)\/v1$/, "") +
+      "/functions/v1/manifest?b=" + encodeURIComponent(b) + "&painel=1&base=" + encodeURIComponent(base);
+  })();
+</script>
 </head>
 <body>
 <div id="raiz"></div>
-<script src="../config.js"></script>
 <script src="../vendor/qrcode.js"></script>
 <script src="../js/supa.js"></script>
 <script src="../vendor/gsap.min.js"></script>

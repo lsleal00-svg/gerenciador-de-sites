@@ -15,7 +15,31 @@
   let equipe = [];
 
   U.registrarSW("sw.js");
-  const linkApp = () => new URL("./", location.href).href;
+  // cada negócio tem o próprio link do painel (app/?b=apelido): a entrada já mostra o logo e as cores dele
+  const lerSlug = () => { const q = (new URLSearchParams(location.search).get("b") || "").toLowerCase().replace(/[^a-z0-9-]/g, "");
+    try { return q || localStorage.getItem("bs_painel_b") || ""; } catch (e) { return q; } };
+  let slugPainel = lerSlug(), marca = null;   // marca = barbearia_publica do link (antes de entrar)
+  const linkApp = () => new URL("./" + (perfil ? "?b=" + encodeURIComponent(perfil.barbearia.slug) : slugPainel ? "?b=" + slugPainel : ""), location.href).href;
+  function lembrarSlug(slug) {
+    if (!slug) return;
+    slugPainel = slug;
+    try { localStorage.setItem("bs_painel_b", slug); } catch (e) { /* */ }
+    const u = new URL(location.href);
+    if (u.searchParams.get("b") !== slug) { u.searchParams.set("b", slug); history.replaceState(null, "", u); }
+    const C = window.CONFIG || {}, man = document.getElementById("manifesto");
+    if (man && C.SUPABASE_URL) {
+      const base = location.origin + location.pathname.replace(/[^/]*$/, "");
+      man.href = String(C.SUPABASE_URL).trim().replace(/\/+$/, "").replace(/\/(rest|auth|functions|storage)\/v1$/, "") +
+        "/functions/v1/manifest?b=" + encodeURIComponent(slug) + "&painel=1&base=" + encodeURIComponent(base);
+    }
+  }
+  function vestirMarca(b) {
+    if (!b) return;
+    U.aparencia(b);
+    const ic = document.querySelector('link[rel="apple-touch-icon"]'), fav = document.querySelector('link[rel="icon"]'), tit = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (b.logo192_url) { if (ic) ic.href = b.logo_url || b.logo192_url; if (fav) fav.href = b.logo192_url; }
+    if (tit) tit.content = String(b.nome || "Painel").slice(0, 20);
+  }
   const linkCliente = () => new URL("../c/?b=" + encodeURIComponent(perfil.barbearia.slug), location.href).href;
   const ehDono = () => perfil && perfil.papel === "dono";
   const leitura = () => perfil && !perfil.licenca_ok;
@@ -33,7 +57,7 @@
   function moldura(titulo, sub, corpo, voltar) {
     raiz.innerHTML = `<main class="entrada"><div class="cartao">
       ${voltar ? `<div class="passo-titulo"><button id="voltar" aria-label="Voltar">←</button><h1 style="margin:0">${esc(titulo)}</h1></div>`
-               : `<img class="marca" src="icones/icone-192.png" alt=""><h1>${esc(titulo)}</h1>`}
+               : marca ? `<img class="marca" src="${esc(marca.logo192_url || "../controle/icones/icone-192.png")}" alt=""><h1>${esc(titulo)}</h1>` : `<img class="marca" src="icones/icone-192.png" alt=""><h1>${esc(titulo)}</h1>`}
       ${sub ? `<p class="sub"${voltar ? ' style="text-align:left"' : ""}>${sub}</p>` : ""}
       ${S.configurado() ? "" : `<div class="aviso-config">Sistema ainda não configurado (config.js vazio).</div>`}
       ${corpo}</div></main>`;
@@ -43,7 +67,7 @@
   function ligarInstalar() { const b = $("#instalar"); if (b) b.onclick = () => U.instalar(); }
 
   function telaLogin() {
-    moldura("Painel", "Entre para gerenciar o seu negócio", `
+    moldura(marca ? marca.nome : "Painel", marca ? `Painel ${U.vocab(marca).da} ${U.vocab(marca).negocio} · entre para gerenciar` : "Entre para gerenciar o seu negócio", `
       <form id="f" novalidate>
         <div class="campo"><label for="email">E-mail</label><input id="email" type="email" autocomplete="username" inputmode="email"></div>
         <div class="campo"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password"></div>
@@ -181,6 +205,7 @@
       barb = (await S.rest(`barbearias?id=eq.${perfil.barbearia.id}&select=*`))[0] || perfil.barbearia;
     } catch (err) { barb = perfil.barbearia; }
     aplicarTema(barb);
+    lembrarSlug(perfil.barbearia.slug); vestirMarca(Object.assign({}, barb, { logo_url: perfil.barbearia.logo_url, logo192_url: perfil.barbearia.logo192_url }));
     document.title = perfil.barbearia.nome + " — Painel";
     if (!aba) aba = "fila";
     desenharCasca();
@@ -564,7 +589,7 @@
     if (!ok) return;
     await S.sair(); perfil = null; barb = null; aba = null; pendentesConhecidos = null;
     clearInterval(relogioStatus); clearInterval(vigia);
-    U.aparencia(null); document.documentElement.style.cssText = "";
+    U.aparencia(marca); document.documentElement.style.cssText = "";
     telaLogin();
   }
 
@@ -620,5 +645,12 @@
   };
 
   /* =================== início =================== */
-  if (S.sessao()) abrir(); else telaLogin();
+  // antes de entrar: com o link do negócio, a tela de entrada já vem com o logo, o nome e as cores dele
+  (async function () {
+    if (slugPainel && S.configurado()) {
+      try { marca = await S.rpc("barbearia_publica", { p_slug: slugPainel }); } catch (e) { marca = null; }
+      if (marca) vestirMarca(marca);
+    }
+    if (S.sessao()) abrir(); else telaLogin();
+  })();
 })();
