@@ -222,6 +222,7 @@
           <button class="btn mini" data-a="acesso">Copiar acesso</button>
           <button class="btn mini sec" data-a="whats">WhatsApp</button>
           <button class="btn mini sec" data-a="cliente">Link do cliente</button>
+          <button class="btn mini sec" data-a="admin">Link do administrador</button>
           <button class="btn mini sec" data-a="renovar">Renovar</button>
           <button class="btn mini sec" data-a="codigo">Novo código</button>
           <button class="btn mini sec" data-a="editar">Editar</button>
@@ -232,7 +233,7 @@
     $$("#lista [data-a]").forEach((bt) => {
       bt.onclick = () => {
         const b = barbearias.find((x) => x.id === bt.closest(".item").dataset.id);
-        ({ acesso: () => U.copiar(mensagemAcesso(b)), whats: () => U.whatsapp(mensagemAcesso(b)), cliente: () => mostrarCliente(b),
+        ({ acesso: () => U.copiar(mensagemAcesso(b)), whats: () => U.whatsapp(mensagemAcesso(b)), cliente: () => mostrarCliente(b), admin: () => mostrarAdmin(b),
            renovar: () => renovar(b), codigo: () => novoCodigo(b), editar: () => editar(b), ativar: () => alternar(b, bt), excluir: () => excluir(b) })[bt.dataset.a]();
       };
     });
@@ -248,6 +249,17 @@
     return U.modal(titulo || "Mensagem de acesso", `<p>Envie esta mensagem para o dono:</p><div class="mensagem">${esc(mensagemAcesso(b))}</div>`, [
       { rotulo: "WhatsApp", classe: "sec", fica: true, antes: () => { U.whatsapp(mensagemAcesso(b)); } },
       { rotulo: "Copiar mensagem", fica: true, antes: () => U.copiar(mensagemAcesso(b)) },
+    ]);
+  }
+
+  function mostrarAdmin(b) {
+    const link = linkApp(b);
+    const msg = `*Painel da ${b.nome}* (administrador): ${link}\nEntre com o e-mail ${b.email} e a sua senha.`;
+    U.modal("Link do administrador", `<p class="pequeno suave">${esc(b.nome)} — é por este link que o dono entra no painel. A tela de entrada já abre com o logo e as cores do negócio, e o painel instalado fica com o nome dele.</p>
+      ${U.qrSvg(link, 200)}<p class="centro pequeno" style="word-break:break-all;margin-top:.75rem">${esc(link)}</p>`, [
+      { rotulo: "Abrir", classe: "sec", fica: true, antes: () => { window.open(link, "_blank", "noopener"); } },
+      { rotulo: "WhatsApp", classe: "sec", fica: true, antes: () => U.whatsapp(msg) },
+      { rotulo: "Copiar link", fica: true, antes: () => U.copiar(link) },
     ]);
   }
 
