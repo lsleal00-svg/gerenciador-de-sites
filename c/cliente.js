@@ -298,8 +298,10 @@
       j.mostrar("Carrinho", carrinho.map((x) => linhaItem(x.item, controleQtd(x))).join("") +
         `<p class="total-linha">Total: <b>${C.dinheiro(total)}</b></p>`, [
         { rotulo: "Continuar comprando", classe: "sec", acao: () => j.fechar() },
-        { rotulo: "Finalizar compra", desligado: !aberta(), acao: () => { j.fechar(); assistente({ tipo: "produto", itens: carrinho.map((x) => ({ item: x.item, qtd: x.qtd })) }); } },
+        ...(entrega() ? [{ rotulo: "Solicitar entrega", classe: "sec", desligado: !aberta(), acao: () => { j.fechar(); assistente({ tipo: "produto", entrega: true, itens: carrinho.map((x) => ({ item: x.item, qtd: x.qtd })) }); } }] : []),
+        { rotulo: entrega() ? "Retirar na loja" : "Finalizar compra", desligado: !aberta(), acao: () => { j.fechar(); assistente({ tipo: "produto", itens: carrinho.map((x) => ({ item: x.item, qtd: x.qtd })) }); } },
       ]);
+      if (entrega()) $(".modal-corpo", j.el).insertAdjacentHTML("beforeend", `<p class="pequeno suave">${U.icone("entrega")}Entregamos no seu endereço${Number(b.taxa_entrega) ? ` · taxa de ${C.dinheiro(b.taxa_entrega)}` : " · entrega grátis"}.</p>`);
       $$("[data-q]", j.el).forEach((bt) => (bt.onclick = () => {
         const x = carrinho.find((c) => c.item.id === bt.dataset.id);
         x.qtd += Number(bt.dataset.q);
@@ -355,14 +357,22 @@
   }
 
   /* ---------- assistente do pedido ---------- */
+  const entrega = () => !!(b.entrega_ativa && mod().entrega);
   const FORMAS = { pix: "Pix", dinheiro: "Dinheiro em espécie", prazo: "À prazo", debito: "Cartão de débito", credito: "Cartão de crédito", misto: "Várias formas", aberto: "Paga na hora" };
-  function totalDe(e) { return e.itens.reduce((s, x) => s + C.final(x.item) * x.qtd, 0); }
+  function totalDe(e) { return e.itens.reduce((s, x) => s + C.final(x.item) * x.qtd, 0) + (e.entrega ? Number(b.taxa_entrega || 0) : 0); }
 
   function assistente(e) {
     const j = janela("Finalizar");
     e.nome = e.nome || ler("bs_nome", ""); e.whatsapp = e.whatsapp || ler("bs_whats", "");
     const precisaZap = () => e.forma === "prazo" || e.quando === "agendar";
+    if (e.entrega) e.end = e.end || ler("bs_end", {});
     const passo = () => {
+      if (e.entrega) {
+        if (!e.dadosOk) return pEndereco();
+        if (!e.forma) return pForma();
+        if (e.forma === "dinheiro" && e.troco === undefined) return pTroco();
+        return pResumo();
+      }
       if (e.tipo === "servico" && !e.quando) return pQuando();
       if (!e.forma) return pForma();
       if (!e.dadosOk) return pDados();
@@ -371,6 +381,50 @@
       return pResumo();
     };
     const voltar = (campo) => ({ rotulo: "Voltar", classe: "sec", acao: () => { delete e[campo]; passo(); } });
+
+    /* ---- entrega: dados pessoais e endereço ---- */
+    function pEndereco() {
+      const v = (k) => esc(e.end[k] || "");
+      j.mostrar("Dados para a entrega", `
+        <div class="campo"><label for="en-nome">Nome</label><input id="en-nome" maxlength="60" autocomplete="name" value="${esc(e.nome)}"></div>
+        <div class="campo"><label for="en-tel">Telefone (WhatsApp) com DDD</label><input id="en-tel" type="tel" inputmode="tel" autocomplete="tel" placeholder="(91) 98888-7777" value="${esc(e.whatsapp)}"></div>
+        <div class="campo"><label for="en-rua">Rua</label><input id="en-rua" maxlength="120" autocomplete="address-line1" value="${v("rua")}"></div>
+        <div class="grade-end"><div class="campo"><label for="en-num">Número</label><input id="en-num" maxlength="20" inputmode="text" placeholder="ou s/n" value="${v("numero")}"></div>
+          <div class="campo"><label for="en-bairro">Bairro</label><input id="en-bairro" maxlength="80" value="${v("bairro")}"></div></div>
+        <div class="campo"><label for="en-ref">Ponto de referência</label><input id="en-ref" maxlength="160" placeholder="Ex.: perto da praça, portão azul" value="${v("referencia")}"></div>`, [
+        { rotulo: "Voltar", classe: "sec", acao: () => { j.fechar(); verCarrinho(); } },
+        { rotulo: "Continuar", acao: () => {
+          const g = (id) => $(id, j.el).value.trim();
+          const nome = g("#en-nome"), tel = g("#en-tel"), rua = g("#en-rua"), numero = g("#en-num"), bairro = g("#en-bairro"), referencia = g("#en-ref");
+          if (nome.length < 2) return U.aviso("Digite o seu nome.", "erro");
+          if (tel.replace(/\D/g, "").length < 10) return U.aviso("Informe o telefone com DDD.", "erro");
+          if (rua.length < 3) return U.aviso("Informe a rua.", "erro");
+          if (!numero) return U.aviso("Informe o número (ou s/n).", "erro");
+          if (bairro.length < 2) return U.aviso("Informe o bairro.", "erro");
+          e.nome = nome; e.whatsapp = tel; e.end = { rua, numero, bairro, referencia };
+          guardar("bs_nome", nome); guardar("bs_whats", tel); guardar("bs_end", e.end);
+          e.dadosOk = true; passo();
+        } },
+      ]);
+      $(e.nome ? (e.end.rua ? "#en-ref" : "#en-rua") : "#en-nome", j.el).focus();
+    }
+    /* ---- entrega em dinheiro: troco para quanto? ---- */
+    function pTroco() {
+      const total = totalDe(e);
+      const notas = [10, 20, 50, 100, 200].filter((n) => n > total).slice(0, 3);
+      j.mostrar("Troco para quanto?", `<p class="total-linha">Total: <b>${C.dinheiro(total)}</b></p>
+        <div class="opcoes"><button class="opcao" data-t="0"><b>Não preciso de troco</b><small>Vou pagar o valor certo</small></button>
+          ${notas.map((n) => `<button class="opcao" data-t="${n}"><b>Troco para ${C.dinheiro(n)}</b><small>O entregador leva ${C.dinheiro(n - total)} de troco</small></button>`).join("")}</div>
+        <div class="campo" style="margin-top:.75rem"><label for="troco-outro">Outro valor (R$)</label><input id="troco-outro" inputmode="decimal" placeholder="Ex.: 150"></div>`, [
+        { rotulo: "Voltar", classe: "sec", acao: () => { delete e.forma; passo(); } },
+        { rotulo: "Usar este valor", acao: () => {
+          const v = C.lerPreco($("#troco-outro", j.el).value);
+          if (!(v >= total)) return U.aviso(`Digite um valor maior que ${C.dinheiro(total)}.`, "erro");
+          e.troco = v; passo();
+        } },
+      ]);
+      $$("[data-t]", j.el).forEach((bt) => (bt.onclick = () => { e.troco = Number(bt.dataset.t) || null; passo(); }));
+    }
 
     function pQuando() {
       const ab = aberta();
@@ -381,13 +435,16 @@
     }
     function pForma() {
       const formas = ["pix", "dinheiro", "debito", "credito", "prazo"].filter((f) => b["aceita_" + f] && !(f === "prazo" && e.tipo === "produto"));
+      const dica = (f) => e.entrega ? (f === "pix" ? "QR Code com o valor certo, pague agora" : f === "dinheiro" ? "Pague ao receber" : "Maquininha na entrega")
+        : f === "pix" ? "QR Code com o valor certo" : f === "dinheiro" ? "Pague no balcão" : f === "debito" || f === "credito" ? "Pague na maquininha, no balcão" : `Pague até ${b.prazo_dias} dias depois`;
       const hoje = new Date();
       const max = new Date(hoje.getTime() + (b.prazo_dias || 7) * 86400000);
       const ymd = (d) => d.toLocaleDateString("en-CA", { timeZone: b.fuso || "America/Sao_Paulo" });
       j.mostrar("Como vai pagar?", `<p class="total-linha">Total: <b>${C.dinheiro(totalDe(e))}</b></p><div class="opcoes">
-        ${formas.map((f) => `<button class="opcao" data-f="${f}"><b>${FORMAS[f]}</b><small>${f === "pix" ? "QR Code com o valor certo" : f === "dinheiro" ? "Pague no balcão" : f === "debito" || f === "credito" ? "Pague na maquininha, no balcão" : `Pague até ${b.prazo_dias} dias depois`}</small></button>`).join("")}</div>
+        ${e.entrega && Number(b.taxa_entrega) ? `<p class="pequeno suave">Inclui a taxa de entrega de ${C.dinheiro(b.taxa_entrega)}.</p>` : ""}
+        ${formas.map((f) => `<button class="opcao" data-f="${f}"><b>${FORMAS[f]}</b><small>${dica(f)}</small></button>`).join("")}</div>
         <div class="campo oculto" id="prazo-data" style="margin-top:.75rem"><label for="pd">Data em que vai pagar</label><input id="pd" type="date" min="${ymd(hoje)}" max="${ymd(max)}"></div>`,
-        [...(e.tipo === "servico" && !e.quandoFixo ? [voltar("quando")] : [])]);
+        [...(e.entrega ? [{ rotulo: "Voltar", classe: "sec", acao: () => { e.dadosOk = false; passo(); } }] : e.tipo === "servico" && !e.quandoFixo ? [voltar("quando")] : [])]);
       $$("[data-f]", j.el).forEach((bt) => (bt.onclick = () => {
         if (bt.dataset.f === "prazo") {
           $("#prazo-data", j.el).classList.remove("oculto");
@@ -400,7 +457,7 @@
           const rod = $(".modal-rodape", j.el); if (!$(".btn:not(.sec)", rod)) rod.appendChild(conf);
           return;
         }
-        e.forma = bt.dataset.f; e.prazo_data = null; passo();
+        e.forma = bt.dataset.f; e.prazo_data = null; delete e.troco; passo();
       }));
       if (!formas.length) $(".modal-corpo", j.el).insertAdjacentHTML("beforeend", `<p class="suave">Nenhuma forma de pagamento disponível. Fale com ${V().a} ${V().negocio}.</p>`);
     }
@@ -469,14 +526,17 @@
     }
     function pResumo() {
       const linhas = e.itens.map((x) => `${x.qtd > 1 ? x.qtd + " × " : ""}${esc(x.item.nome)} — ${C.dinheiro(C.final(x.item) * x.qtd)}`);
+      if (e.entrega) linhas.push(`Taxa de entrega — ${Number(b.taxa_entrega) ? C.dinheiro(b.taxa_entrega) : "grátis"}`);
       j.mostrar("Confira o pedido", `<ul class="resumo">${linhas.map((l) => `<li>${l}</li>`).join("")}</ul>
         <p class="total-linha">Total: <b>${C.dinheiro(totalDe(e))}</b></p>
         <dl class="resumo-dados">
           ${e.tipo === "servico" ? `<dt>Barbeiro</dt><dd>${esc(e.barbeiro.nome)}</dd><dt>Quando</dt><dd>${e.quando === "agendar" ? esc(quando(quandoIso())) : "Agora (entrar na fila)"}</dd>` : ""}
           <dt>Pagamento</dt><dd>${FORMAS[e.forma]}${e.forma === "prazo" ? " · até " + new Date(e.prazo_data + "T12:00").toLocaleDateString("pt-BR") : ""}</dd>
-          <dt>Nome</dt><dd>${esc(e.nome)}</dd></dl>`, [
-        { rotulo: "Voltar", classe: "sec", acao: () => { if (e.quando === "agendar") delete e.horario; else if (e.tipo === "servico" && !e.barbeiroFixo) delete e.barbeiro; else e.dadosOk = false; passo(); } },
-        { rotulo: "Enviar pedido", acao: enviar },
+          ${e.entrega && e.forma === "dinheiro" ? `<dt>Troco</dt><dd>${e.troco ? "Para " + C.dinheiro(e.troco) + " (levar " + C.dinheiro(e.troco - totalDe(e)) + ")" : "Não precisa"}</dd>` : ""}
+          <dt>Nome</dt><dd>${esc(e.nome)}</dd>
+          ${e.entrega ? `<dt>Telefone</dt><dd>${esc(e.whatsapp)}</dd><dt>Entregar em</dt><dd>${esc(e.end.rua)}, ${esc(e.end.numero)} · ${esc(e.end.bairro)}${e.end.referencia ? `<br><span class="suave">${esc(e.end.referencia)}</span>` : ""}</dd>` : ""}</dl>`, [
+        { rotulo: "Voltar", classe: "sec", acao: () => { if (e.entrega) { if (e.forma === "dinheiro") delete e.troco; else delete e.forma; passo(); return; } if (e.quando === "agendar") delete e.horario; else if (e.tipo === "servico" && !e.barbeiroFixo) delete e.barbeiro; else e.dadosOk = false; passo(); } },
+        { rotulo: e.entrega ? "Pedir entrega" : "Enviar pedido", acao: enviar },
       ]);
     }
     async function enviar() {
@@ -487,18 +547,24 @@
         p_nome: e.nome, p_whatsapp: precisaZap() ? e.whatsapp : null, p_forma: e.forma,
         p_prazo_data: e.forma === "prazo" ? e.prazo_data : null, p_agendado_para: quandoIso(),
       };
-      const r = await S.rpc("criar_pedido", corpo);
+      const r = e.entrega
+        ? await S.rpc("criar_entrega", { p_barbearia: b.id, p_dispositivo: aparelho(), p_itens: corpo.p_itens, p_nome: e.nome, p_telefone: e.whatsapp, p_forma: e.forma,
+            p_rua: e.end.rua, p_numero: e.end.numero, p_bairro: e.end.bairro, p_referencia: e.end.referencia || null, p_troco_para: e.forma === "dinheiro" ? (e.troco || null) : null })
+        : await S.rpc("criar_pedido", corpo);
       S.fn("notificar", { pedido: r.id }).catch(() => {});
       if (e.tipo === "produto") carrinho = []; else servicos = [];
       salvarSacola(); desenharLista();
       statusAntigo[r.id] = "pendente/";
       await atualizar();
       const pix = r.pix ? PIX.copiaECola(Object.assign({}, r.pix, { valor: r.total, txid: "BS" + r.id.replace(/-/g, "").slice(0, 20) })) : null;
-      j.mostrar("Pedido enviado!", `<p>Seu pedido foi enviado para ${e.tipo === "servico" ? `<b>${esc(e.barbeiro.nome)}</b>` : `${V().a} ${V().negocio}`}. Aguarde a aprovação: você acompanha em <b>Meus pedidos</b>.</p>
+      j.mostrar(e.entrega ? "Entrega solicitada!" : "Pedido enviado!", (e.entrega
+        ? `<p>${(V().a || "a").toUpperCase()} ${V().negocio} já recebeu o seu pedido e vai entregar em <b>${esc(e.end.rua)}, ${esc(e.end.numero)}</b>. Você acompanha em <b>Meus pedidos</b>.</p>`
+        : `<p>Seu pedido foi enviado para ${e.tipo === "servico" ? `<b>${esc(e.barbeiro.nome)}</b>` : `${V().a} ${V().negocio}`}. Aguarde a aprovação: você acompanha em <b>Meus pedidos</b>.</p>`) + `
         ${pix ? `<div class="pix-pagar"><p><b>Pague ${C.dinheiro(r.total)} com Pix</b></p>${U.qrSvg(pix, 220)}
           <p class="pequeno">Para: ${esc(r.pix.titular)} · ${esc(PIX.NOMES[r.pix.tipo])}: ${esc(PIX.mostrarChave(r.pix.tipo, r.pix.chave))}</p>
-          <p class="pequeno suave">Depois de pagar, mostre o comprovante. O barbeiro confirma e aprova o seu pedido.</p></div>` : ""}
-        ${["dinheiro", "debito", "credito"].includes(e.forma) && e.quando !== "agendar" ? `<p class="pequeno suave">Pague no balcão: depois que o pagamento for confirmado você entra na fila.</p>` : ""}
+          <p class="pequeno suave">${e.entrega ? "Depois de pagar, guarde o comprovante para mostrar na entrega." : "Depois de pagar, mostre o comprovante. O barbeiro confirma e aprova o seu pedido."}</p></div>` : ""}
+        ${e.entrega && e.forma !== "pix" ? `<p class="pequeno suave">${e.forma === "dinheiro" ? `Pague ${C.dinheiro(r.total)} ao receber${e.troco ? ` — o entregador leva troco para ${C.dinheiro(e.troco)}` : ""}.` : `Pague ${C.dinheiro(r.total)} na maquininha, ao receber.`}</p>` : ""}
+        ${!e.entrega && ["dinheiro", "debito", "credito"].includes(e.forma) && e.quando !== "agendar" ? `<p class="pequeno suave">Pague no balcão: depois que o pagamento for confirmado você entra na fila.</p>` : ""}
         ${e.quando === "agendar" ? `<p class="pequeno suave">Quando o barbeiro aprovar, seu horário fica reservado. No dia, você entra na fila na hora marcada.</p>` : ""}`, [
         ...(pix ? [{ rotulo: "Copiar Pix copia e cola", classe: "sec", acao: () => U.copiar(pix) }] : []),
         { rotulo: "Ver meus pedidos", acao: () => { j.fechar(); verMeus(); } },
@@ -513,6 +579,8 @@
 
   /* ---------- meus pedidos ---------- */
   function textoStatus(p) {
+    if (p.entrega && p.status === "pendente") return { t: "Entrega a caminho em breve", c: "alerta" };
+    if (p.entrega && p.status === "concluido") return { t: "Entregue", c: "ok" };
     if (p.status === "pendente") return { t: "Aguardando aprovação", c: "alerta" };
     if (p.status === "recusado") return { t: "Recusado — faça uma nova solicitação", c: "erro" };
     if (p.status === "cancelado") return { t: "Cancelado", c: "" };
@@ -530,6 +598,7 @@
         const pode = (p.status === "pendente" || p.status === "aprovado") && p.fila_status !== "atendimento";
         return `<div class="meu-pedido"><div class="mp-topo"><span class="selo ${st.c}">${esc(st.t)}</span><b>${C.dinheiro(p.total)}</b></div>
           <div class="pequeno">${(p.itens || []).map((i) => `${i.qtd > 1 ? i.qtd + " × " : ""}${esc(i.nome)}`).join(", ")}</div>
+          ${p.entrega && p.endereco ? `<div class="pequeno">${U.icone("entrega")}Entrega: ${esc(p.endereco.rua)}, ${esc(p.endereco.numero)} · ${esc(p.endereco.bairro)}</div>` : ""}
           <div class="pequeno suave">${p.tipo === "servico" ? "Com " + esc(p.barbeiro) + " · " : ""}${p.agendado_para ? "Agendado para " + esc(quando(p.agendado_para)) : "Pedido " + esc(quando(p.criado_em))} · ${FORMAS[p.forma]}</div>
           ${pode ? `<button class="btn mini sec" data-cancelar="${p.id}">Cancelar</button>` : ""}</div>`;
       }).join("") : `<p class="suave">Nenhum pedido recente.</p>`, [{ rotulo: "Fechar", classe: "sec", acao: () => j.fechar() }]);
@@ -557,6 +626,7 @@
           else if (p.status === "aprovado" && p.fila_status) U.aviso(`Pedido aprovado! ${textoStatus(p).t}.`);
           else if (p.status === "aprovado") U.aviso("Agendamento confirmado!");
           else if (p.fila_status === "atendimento") U.aviso("É a sua vez!");
+          else if (p.entrega && p.status === "concluido") U.aviso("Entrega confirmada. Obrigado pela compra!");
         }
         statusAntigo[p.id] = agora;
       });
