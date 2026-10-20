@@ -28,6 +28,8 @@
 
   /* Ícones desenhados (traço 2, mesmo estilo em todo o sistema). */
   const ICONES = {
+    entrega: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
+    mapa: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
     tesoura: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
     sacola: '<path d="M6 8h12l-1 12H7L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
     lista: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4.5h6M9 10h6M9 14h6M9 18h3"/>',
@@ -409,7 +411,7 @@
 
   /* ---------- tipos de negócio ---------- */
   // O banco manda os módulos (tabela tipos_negocio); sem resposta, vale a barbearia completa.
-  const MODULOS_PADRAO = { tipo: "barbearia", nome: "Barbearia", fila: true, servicos: true, agendamento: true, graficos_servicos: true, inadimplencia: true, intervalo: true, barbeiros: true };
+  const MODULOS_PADRAO = { tipo: "barbearia", nome: "Barbearia", fila: true, servicos: true, agendamento: true, graficos_servicos: true, inadimplencia: true, intervalo: true, barbeiros: true, entrega: false };
   U.TIPOS_NEGOCIO = {
     barbearia: { nome: "Barbearia", negocio: "barbearia", Negocio: "Barbearia", a: "a", da: "da", na: "na" },
     loja: { nome: "Loja de Variedades", negocio: "loja", Negocio: "Loja", a: "a", da: "da", na: "na" },
