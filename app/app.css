@@ -521,3 +521,10 @@ body.pdv-aberto:has(.modal-fundo) #avisos { bottom: auto; }
 @media (max-width: 420px) { .relogio { gap: .65rem; } .roda { width: 56px; } .relogio-hora { font-size: 2.1rem; } }
 @media (prefers-reduced-motion: reduce) { .roda-op { transition: none; } }
 .topo-app .logo-vazio { display: grid; place-items: center; background: var(--casca-texto); color: var(--casca); font-family: var(--num); font-weight: var(--peso-num); font-size: 1.05rem; }
+
+/* ---------- Entregas (aba Pedidos da loja) ---------- */
+#bloco-entregas h2 svg { width: 1.15em; height: 1.15em; vertical-align: -.18em; margin-right: .35rem; }
+.entrega-item .fi-pos { display: inline-grid; place-items: center; min-width: 2rem; height: 2rem; border-radius: 999px; background: var(--casca); color: var(--casca-texto); font: var(--peso-num, 800) .92rem/1 var(--num, inherit); }
+.entrega-end { display: grid; grid-template-columns: 22px 1fr; gap: .5rem; align-items: start; margin: .35rem 0 .45rem; padding: .55rem .65rem; border-radius: 10px; background: color-mix(in srgb, var(--casca) 7%, transparent); }
+.entrega-end svg { width: 22px; height: 22px; color: var(--casca); margin-top: .1rem; }
+.entrega-end a { display: inline-block; margin-top: .2rem; font-weight: 700; }

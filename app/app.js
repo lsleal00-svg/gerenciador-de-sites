@@ -33,6 +33,8 @@
         "/functions/v1/manifest?b=" + encodeURIComponent(slug) + "&painel=1&base=" + encodeURIComponent(base);
     }
   }
+  // negócio sem barbeiros (ex.: loja de variedades): a "equipe" é só o caixa
+  const soCaixa = () => !!(marca && !U.modulos(marca).barbeiros);
   function vestirMarca(b) {
     if (!b) return;
     U.aparencia(b);
@@ -78,7 +80,7 @@
       <div class="separador">ou</div>
       <div class="acoes-entrada">
         <button class="btn sec bloco" id="primeiro" type="button">Primeiro acesso (tenho um código)</button>
-        <button class="btn sec bloco" id="equipe" type="button">Sou da equipe (tenho um código)</button>
+        <button class="btn sec bloco" id="equipe" type="button">${soCaixa() ? "Sou do caixa" : "Sou da equipe"} (tenho um código)</button>
       </div>${botaoInstalar()}`);
     $("#f").onsubmit = async (e) => {
       e.preventDefault();
@@ -165,7 +167,7 @@
   }
 
   function telaEquipe() {
-    moldura("Entrar com código", "Equipe (barbeiro associado ou caixa): digite o código que o dono do negócio te passou.", `
+    moldura("Entrar com código", soCaixa() ? "Caixa: digite o código que a dona ou o dono da loja te passou." : "Equipe (barbeiro associado ou caixa): digite o código que o dono do negócio te passou.", `
       <form id="f" novalidate>
         <div class="campo"><label for="codigo">Código de acesso</label><input id="codigo" class="codigo-input" maxlength="9" autocomplete="off" autocapitalize="characters" placeholder="ABCD2345"></div>
         <div class="campo"><label class="linha-check"><input id="manter" type="checkbox" checked> Manter-me conectado</label></div>
@@ -539,6 +541,13 @@
         ${M().fila ? `<section class="cartao"><h2>Fila no app do cliente</h2>
           <label class="linha-check"><input type="checkbox" id="cfg-fila"${barb.esconder_fila ? " checked" : ""}${leitura() ? " disabled" : ""}> Esconder a fila dos clientes</label>
           <p class="pequeno suave" style="margin-top:.5rem">Com a fila escondida, o cliente vê só os destaques, os cortes e os produtos. Ele continua podendo pedir e agendar, e você continua vendo a fila aqui no painel.</p></section>` : ""}
+        ${M().entrega ? `<section class="cartao" id="cfg-entrega"><h2>Entrega</h2>
+          <label class="linha-check"><input type="checkbox" id="cfg-ent"${barb.entrega_ativa ? " checked" : ""}${leitura() ? " disabled" : ""}> Realizar entrega?</label>
+          <p class="pequeno suave" style="margin-top:.5rem">Marcado, o cliente vê <b>Solicitar entrega</b> no carrinho, informa o endereço e a forma de pagamento, e o pedido chega na hora no bloco <b>Entregas</b> da aba Pedidos.</p>
+          <div class="campo${barb.entrega_ativa ? "" : " oculto"}" id="cfg-taxa-campo" style="margin-top:.6rem"><label for="cfg-taxa">Taxa de entrega (R$)</label>
+            <div class="linha-acoes"><input id="cfg-taxa" inputmode="decimal" style="max-width:9rem" value="${esc(CARDAPIO.dinheiro(barb.taxa_entrega || 0).replace(/[^\d,]/g, ""))}"${leitura() ? " disabled" : ""}>
+            <button class="btn sec" id="cfg-taxa-salvar"${leitura() ? " disabled" : ""}>Salvar taxa</button></div>
+            <p class="pequeno suave">Deixe 0 para entrega grátis. A taxa soma no total do pedido.</p></div></section>` : ""}
       </div>`;
   }
 
@@ -562,6 +571,19 @@
     if ($("#cfg-fila")) $("#cfg-fila").onchange = async (e) => {
       try { await salvarBarbearia({ esconder_fila: e.target.checked }); U.aviso(e.target.checked ? "Fila escondida na tela do cliente." : "Fila visível na tela do cliente."); }
       catch (err) { e.target.checked = !e.target.checked; U.aviso(err.message, "erro"); }
+    };
+    if ($("#cfg-ent")) $("#cfg-ent").onchange = async (e) => {
+      try {
+        await salvarBarbearia({ entrega_ativa: e.target.checked });
+        $("#cfg-taxa-campo").classList.toggle("oculto", !e.target.checked);
+        U.aviso(e.target.checked ? "Entrega ligada: o cliente já vê \"Solicitar entrega\"." : "Entrega desligada.");
+      } catch (err) { e.target.checked = !e.target.checked; U.aviso(err.message, "erro"); }
+    };
+    if ($("#cfg-taxa-salvar")) $("#cfg-taxa-salvar").onclick = async (ev) => {
+      const v = CARDAPIO.lerPreco($("#cfg-taxa").value || "0");
+      if (isNaN(v) || v < 0 || v > 1000) return U.aviso("Taxa inválida.", "erro");
+      try { await U.ocupado(ev.currentTarget, () => salvarBarbearia({ taxa_entrega: v })); U.aviso(v ? `Taxa de entrega: ${CARDAPIO.dinheiro(v)}.` : "Entrega grátis."); }
+      catch (err) { U.aviso(err.message, "erro"); }
     };
     $("#cfg-mov").onchange = async (e) => {
       try { await salvarBarbearia({ ver_movimentacao: e.target.checked }); pintarOnline(); }

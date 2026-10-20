@@ -22,7 +22,7 @@
     const ids = new Set(dados.pendentes.map((p) => p.id));
     if (conhecidos) {
       const novos = dados.pendentes.filter((p) => !conhecidos.has(p.id));
-      if (novos.length) { bip(); U.aviso(novos.length === 1 ? `Novo pedido de ${novos[0].cliente_nome}!` : `${novos.length} pedidos novos!`); }
+      if (novos.length) { bip(); U.aviso(novos.length === 1 ? `${novos[0].entrega ? "Nova entrega" : "Novo pedido"} de ${novos[0].cliente_nome}!` : `${novos.length} pedidos novos!`); }
     }
     conhecidos = ids;
     if (A().marcarPendentes) A().marcarPendentes(ids.size);
@@ -46,7 +46,8 @@
     if (!corpo || !document.body.contains(corpo)) return;
     const ro = A().leitura();
     const dis = ro ? " disabled" : "";
-    const pend = dados.pendentes, ver = dados.papel !== "associado";
+    const ver = dados.papel !== "associado";
+    const entregas = dados.pendentes.filter((p) => p.entrega), pend = dados.pendentes.filter((p) => !p.entrega);
     const nAg = dados.agendamentos.length;
     const mod = A().modulos();   // sem fila (ex.: loja): a aba vira só "Pedidos para aprovar"
     corpo.innerHTML = `<div class="fila-painel">
@@ -55,6 +56,10 @@
         <button class="btn sec" id="ver-agendados">${U.icone("lista")}Ver cortes agendados${nAg ? ` <span class="contador-pend contador-neutro">${nAg}</span>` : ""}</button>
       </div>`}
       ${blocoAvisos()}
+      ${mod.entrega || entregas.length ? `<section class="cartao" id="bloco-entregas"><h2>${U.icone("entrega")}Entregas ${entregas.length ? `<span class="contador-pend">${entregas.length}</span>` : ""}</h2>
+        ${entregas.length ? entregas.map((p, i) => cartaoEntrega(p, i, dis)).join("")
+          : `<p class="suave pequeno">${A().b().entrega_ativa ? "Nenhuma entrega esperando. Quando chegar, toca um aviso." : "A entrega está desligada. Para ligar: Configurações → Entrega → Realizar entrega?"}</p>`}
+      </section>` : ""}
       <section class="cartao"><h2>Pedidos para aprovar ${pend.length ? `<span class="contador-pend">${pend.length}</span>` : ""}</h2>
         ${pend.length ? pend.map((p) => cartaoPendente(p, ver, dis)).join("") : `<p class="suave pequeno">Nenhum pedido esperando. Quando chegar, toca um aviso.</p>`}
       </section>
@@ -83,6 +88,26 @@
         ${p.agendado_para ? " · para " + esc(quando(p.agendado_para)) : ""}${ver && p.tipo === "servico" ? " · com " + esc(nomeBarbeiro(p.barbeiro_id)) : ""} · chegou ${esc(new Date(p.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }))}</div>
       ${p.forma === "pix" && !p.agendado_para ? `<div class="pequeno aviso-pix">Confira o Pix de ${C.dinheiro(p.total)} no seu banco antes de aprovar.</div>` : ""}
       <div class="pend-acoes"><button class="btn" data-a="aprovar"${dis}>${rotulo}</button>
+        <button class="btn sec" data-a="recusar"${dis}>Recusar</button><button class="btn sec" data-a="bloquear"${dis}>Bloquear</button></div></div>`;
+  }
+
+  /* entrega: dados do cliente, endereço (com link do mapa), troco, e "Entregue e pago" fecha tudo */
+  function cartaoEntrega(p, i, dis) {
+    const e = p.endereco || {}, tel = String(p.cliente_whatsapp || "").replace(/\D/g, "");
+    const endTxt = `${e.rua || ""}, ${e.numero || ""} - ${e.bairro || ""}`;
+    const mapa = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(endTxt + (A().b().cidade ? ", " + A().b().cidade : ""));
+    const troco = p.forma === "dinheiro" ? (p.troco_para ? `Levar troco: <b>${C.dinheiro(p.troco_para - p.total)}</b> (cliente paga com ${C.dinheiro(p.troco_para)})` : "Cliente paga o valor certo, sem troco") : "";
+    return `<div class="pendente entrega-item" data-id="${p.id}">
+      <div class="pend-topo"><span class="fi-pos">${i + 1}º</span><b>${esc(p.cliente_nome)}</b> ${zapLink(p.cliente_whatsapp)}${tel ? ` <a class="link-zap" href="tel:+55${esc(tel)}">Ligar</a>` : ""}
+        <span class="selo alerta">Entrega</span></div>
+      <div class="entrega-end">${U.icone("mapa")}<div><b>${esc(e.rua || "")}, ${esc(e.numero || "")}</b> · ${esc(e.bairro || "")}
+        ${e.referencia ? `<div class="pequeno suave">Referência: ${esc(e.referencia)}</div>` : ""}
+        <a class="pequeno" href="${esc(mapa)}" target="_blank" rel="noopener">Abrir no mapa</a></div></div>
+      <div>${itensTxt(p)}${Number(p.taxa_entrega) ? ` + entrega ${C.dinheiro(p.taxa_entrega)}` : ""} — <b>${C.dinheiro(p.total)}</b></div>
+      <div class="pequeno suave">${p.forma === "pix" ? "Pix (pago pelo app)" : FORMAS[p.forma] + " na entrega"} · tel. ${esc(tel.length >= 10 ? `(${tel.slice(0, 2)}) ${tel.slice(2, -4)}-${tel.slice(-4)}` : tel)} · chegou ${esc(new Date(p.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }))}</div>
+      ${troco ? `<div class="pequeno aviso-pix">${troco}</div>` : ""}
+      ${p.forma === "pix" ? `<div class="pequeno aviso-pix">Confira o Pix de ${C.dinheiro(p.total)} no seu banco.</div>` : ""}
+      <div class="pend-acoes"><button class="btn" data-a="aprovar"${dis}>Entregue e pago</button>
         <button class="btn sec" data-a="recusar"${dis}>Recusar</button><button class="btn sec" data-a="bloquear"${dis}>Bloquear</button></div></div>`;
   }
 
@@ -119,6 +144,8 @@
         if (!r) return;
         pagamentos = r.pagamentos;
         if (r.troco) setTimeout(() => U.aviso(`Troco: ${C.dinheiro(r.troco)}.`), 400);
+      } else if (acao === "aprovar" && pedido && pedido.entrega) {
+        if (!(await U.confirmar("Entregue e pago", `Confirmar que o pedido de <b>${esc(pedido.cliente_nome)}</b> foi entregue e pago (${C.dinheiro(pedido.total)})? Ele entra no Caixa de hoje.`, "Entregue e pago"))) return;
       } else if (acao === "aprovar" && pedido && pedido.forma === "dinheiro" && !pedido.agendado_para) {
         if (!(await window.BALCAO.troco(Number(pedido.total), "Receber em dinheiro", `<b>${esc(pedido.cliente_nome)}</b> · ${itensTxt(pedido)}`))) return;
       }
@@ -130,7 +157,8 @@
         else if (acao === "remover") await S.rpc("pedido_remover", { p_id: id });
       });
       await carregar(); desenhar();
-      const msg = { aprovar: "Aprovado.", recusar: "Pedido recusado.", bloquear: "Recusado e bloqueado por 30 min.", finalizar: "Corte finalizado. Próximo!", pago: "Pagamento confirmado.", remover: "Removido." }[acao];
+      const entregue = acao === "aprovar" && pedido && pedido.entrega;
+      const msg = { aprovar: entregue ? "Entrega concluída e paga." : "Aprovado.", recusar: "Pedido recusado.", bloquear: "Recusado e bloqueado por 30 min.", finalizar: "Corte finalizado. Próximo!", pago: "Pagamento confirmado.", remover: "Removido." }[acao];
       if (msg) U.aviso(msg);
     } catch (err) { U.aviso(err.message, "erro"); try { await carregar(); desenhar(); } catch (e) { /* */ } }
   }
