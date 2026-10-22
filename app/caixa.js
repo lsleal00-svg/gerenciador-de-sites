@@ -24,6 +24,8 @@
   // serviços = tudo que não é produto ("outros"); vendas antigas ainda trazem "cabelo"/"barba"
   const contaServicos = (ps) => ps.reduce((s, p) => s + (p.itens || []).filter((i) => i.tipo !== "outros").reduce((n, i) => n + Number(i.qtd || 1), 0), 0);
   const devendo = (ps) => ps.filter((p) => p.forma === "prazo" && !p.pago);
+  // dívida cadastrada à mão ("Adicionar devedor"): entra no caixa quando paga, mas não é venda de produto
+  const ehDivida = (p) => (p.itens || []).some((i) => i.tipo === "divida");
   const formaPaga = (p) => p.pago_forma || (p.forma === "prazo" ? "dinheiro" : p.forma);
   /* Quanto entrou em cada forma (uma venda pode ter dinheiro + Pix + cartão) e a taxa da maquininha. */
   const listaPag = (p) => (Array.isArray(p.pagamentos) && p.pagamentos.length ? p.pagamentos
@@ -134,7 +136,7 @@
   }
   function secaoProdutos(el) {
     const hoje = d7.hoje, de = somaDias(hoje, -6);
-    const vendas = recebidos(d7.pedidos, de, hoje).filter((p) => p.tipo === "produto");
+    const vendas = recebidos(d7.pedidos, de, hoje).filter((p) => p.tipo === "produto" && !ehDivida(p));
     const lista = agruparProdutos(vendas), total = soma(vendas), taxa = somaTaxa(vendas);
     const dias = Array.from({ length: 7 }, (_, i) => somaDias(de, i)).map((d) => ({ dia: d, hoje: d === hoje, rot: `${diaSemana(d)} ${br(d)}`, curto: diaSemana(d),
       v: liquido(vendas.filter((p) => ymd(p.pago_em) === d)) }));
@@ -196,12 +198,12 @@
     const itensTxt = (p) => (p.itens || []).map((i) => `${i.qtd > 1 ? i.qtd + "× " : ""}${esc(i.nome)}`).join(", ");
     const extrasPag = (p) => [p.forma === "prazo" ? "à prazo" : "", p.origem === "balcao" ? "balcão" : ""].filter(Boolean).join(" · ");
     // PDF: uma linha de texto por venda
-    const linhas = vendas.map((p) => [quandoTxt(p), esc(p.cliente_nome), p.tipo === "produto" ? "Produto" : "Serviço", itensTxt(p),
+    const linhas = vendas.map((p) => [quandoTxt(p), esc(p.cliente_nome), ehDivida(p) ? "Dívida" : p.tipo === "produto" ? "Produto" : "Serviço", itensTxt(p),
       textoPag(p) + (extrasPag(p) ? " · " + extrasPag(p) : "") + (Number(p.taxa_valor) ? ` · taxa −${C.dinheiro(p.taxa_valor)}` : ""), C.dinheiro(p.total)]);
     // tela: cada forma numa linha (valor junto da forma), taxa à parte
     const pagHtml = (p) => `${listaPag(p).map((x) => `<span class="rel-parte">${FORMAS[x.f] || esc(x.f)} ${C.dinheiro(x.v)}</span>`).join("")}${
       extrasPag(p) ? `<span class="rel-extra">${esc(extrasPag(p))}</span>` : ""}${Number(p.taxa_valor) ? `<span class="rel-extra">taxa −${C.dinheiro(p.taxa_valor)}</span>` : ""}`;
-    const linhasTela = vendas.map((p) => [quandoTxt(p), `${esc(p.cliente_nome)}${p.tipo === "produto" ? ` <span class="selo">Produto</span>` : ""}`,
+    const linhasTela = vendas.map((p) => [quandoTxt(p), `${esc(p.cliente_nome)}${ehDivida(p) ? ` <span class="selo alerta">Dívida</span>` : p.tipo === "produto" ? ` <span class="selo">Produto</span>` : ""}`,
       itensTxt(p), pagHtml(p), C.dinheiro(p.total),
       `<button class="btn mini sec btn-excluir" data-excluir="${p.id}" aria-label="Excluir venda de ${esc(p.cliente_nome)}">${U.icone("lixeira")}Excluir</button>`]);
     const resumo = { titulo, de, ate, vendas, cortes, prods, real, linhas, pix: somaPix(vendas), din: somaDin(vendas), deb: somaDeb(vendas), cred: somaCred(vendas), taxa: somaTaxa(vendas) };
@@ -262,8 +264,10 @@
   function secaoInadimplencia(el) {
     const hoje = d7.hoje;
     const lista = devendo(d7.pedidos).map((p) => Object.assign({ dias: diasEntre(hoje, p.prazo_data) }, p)).sort((a, b) => a.dias - b.dias);
-    el.innerHTML = `<section class="cartao"><h2>Inadimplência</h2>
-      <p class="pequeno suave">Clientes que pagaram à prazo. Ao tocar em <b>Pago</b>, o valor entra nos relatórios do dia de hoje (não do dia do corte).</p>
+    const ro = A().leitura && A().leitura();
+    el.innerHTML = `<section class="cartao"><div class="cab-inad"><h2>Inadimplência</h2>
+        <button class="btn" id="add-devedor"${ro ? " disabled" : ""}>${U.icone("mais")}Adicionar devedor</button></div>
+      <p class="pequeno suave">Clientes que pagaram à prazo e quem já devia antes do sistema. Ao tocar em <b>Pago</b>, o valor entra nos relatórios do dia de hoje (não do dia da compra).</p>
       ${lista.length ? `<div class="kpis">${tile("Total em aberto", C.dinheiro(soma(lista)))}${tile("Atrasados", lista.filter((p) => p.dias < 0).length)}</div>` + lista.map((p) => {
         const atrasado = p.dias < 0;
         return `<div class="devedor${atrasado ? " atrasado" : ""}" data-id="${p.id}">
@@ -272,15 +276,43 @@
             <div class="pequeno suave">Vencimento ${esc(br(p.prazo_data))} · ${atrasado ? `atrasado há ${-p.dias} dia(s)` : p.dias === 0 ? "vence hoje" : `faltam ${p.dias} dia(s)`}${p.cliente_whatsapp ? " · " + esc(p.cliente_whatsapp) : ""}</div></div>
           <div class="dv-acoes"><button class="btn" data-a="pago">Pago</button>${atrasado ? `<button class="btn sec" data-a="cobrar">Efetuar cobrança</button>` : ""}</div></div>`;
       }).join("") : `<p class="suave pequeno">Ninguém devendo. 🎉</p>`}</section>`;
+    $("#add-devedor", el).onclick = adicionarDevedor;
     $$(".devedor [data-a]", el).forEach((bt) => (bt.onclick = () => {
       const p = lista.find((x) => x.id === bt.closest(".devedor").dataset.id);
       if (bt.dataset.a === "cobrar") return cobrar(p);
       pagar(p);
     }));
   }
+  /* quem já devia antes do sistema: nome, telefone e valor (vencimento e descrição são opcionais) */
+  async function adicionarDevedor() {
+    const hoje = d7.hoje;
+    const promessa = U.modal("Adicionar devedor", `
+      <p class="pequeno suave">Para quem já te devia antes de usar o sistema. A pessoa entra direto na lista, devendo.</p>
+      <div class="campo"><label for="dv-nome">Nome</label><input id="dv-nome" maxlength="60" autocomplete="off"></div>
+      <div class="campo"><label for="dv-zap">Telefone (WhatsApp) com DDD</label><input id="dv-zap" type="tel" inputmode="tel" placeholder="(91) 98888-7777"></div>
+      <div class="campo"><label for="dv-valor">Valor da dívida (R$)</label><input id="dv-valor" inputmode="decimal" placeholder="0,00"></div>
+      <div class="grade-2 grade-2-fixa">
+        <div class="campo"><label for="dv-venc">Vencimento</label><input id="dv-venc" type="date" value="${hoje}"></div>
+        <div class="campo"><label for="dv-desc">Do que é (opcional)</label><input id="dv-desc" maxlength="60" placeholder="Dívida anterior"></div></div>
+      <p class="pequeno suave">Vencimento já passado entra como <b>inadimplente</b> e mostra o botão de cobrança.</p>`, [
+      { rotulo: "Cancelar", classe: "sec", valor: false },
+      { rotulo: "Adicionar à lista", antes: async (m) => {
+        const nome = $("#dv-nome", m).value.trim(), zap = $("#dv-zap", m).value.trim(), valor = C.lerPreco($("#dv-valor", m).value);
+        if (nome.length < 2) { U.aviso("Digite o nome de quem deve.", "erro"); return false; }
+        if (zap.replace(/\D/g, "").length < 10) { U.aviso("Informe o telefone com DDD.", "erro"); return false; }
+        if (!(valor > 0)) { U.aviso("Informe o valor da dívida.", "erro"); return false; }
+        await A().S.rpc("divida_adicionar", { p_nome: nome, p_telefone: zap, p_valor: valor, p_vencimento: $("#dv-venc", m).value || null, p_descricao: $("#dv-desc", m).value.trim() || null });
+        U.aviso(`${nome} entrou na lista devendo ${C.dinheiro(valor)}.`);
+        if (window.CLIENTES) window.CLIENTES.esquecer();
+      } },
+    ]);
+    const m = [...document.querySelectorAll(".modal-fundo")].pop();
+    if (window.CLIENTES && m) window.CLIENTES.ligar(m, "#dv-nome", "#dv-zap");
+    if (await promessa) { secao = "inadimplencia"; await tela(corpoAtual); }
+  }
   function mensagemCobranca(p) {
     const pix = d7.pix ? `\nPix (${PIX.NOMES[d7.pix.tipo]}): ${PIX.mostrarChave(d7.pix.tipo, d7.pix.chave)} — ${d7.pix.titular}` : "";
-    return `Olá, ${p.cliente_nome.split(" ")[0]}! Aqui é da *${d7.barbearia}*.\n\nConsta em aberto o valor de *${C.dinheiro(p.total)}* referente a ${(p.itens || []).map((i) => i.nome).join(", ")}` +
+    return `Olá, ${p.cliente_nome.split(" ")[0]}! Aqui é da *${d7.barbearia}*.\n\nConsta em aberto o valor de *${C.dinheiro(p.total)}* referente a ${(p.itens || []).map((i) => i.tipo === "divida" && i.nome === "Dívida anterior" ? "dívida anterior" : i.nome).join(", ")}` +
       `${p.finalizado_em ? ` do dia ${br(ymd(p.finalizado_em))}` : ""}, com vencimento em ${br(p.prazo_data)}.\n\nVocê pode pagar no balcão ou por Pix.${pix}\n\nObrigado!`;
   }
   function cobrar(p) {
