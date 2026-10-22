@@ -534,3 +534,8 @@ body.pdv-aberto:has(.modal-fundo) #avisos { bottom: auto; }
 .cab-inad h2 { margin: 0; }
 .cab-inad .btn svg { width: 1.05em; height: 1.05em; vertical-align: -.15em; margin-right: .3rem; }
 .grade-2-fixa { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .6rem; }
+.dv-acoes { align-items: center; }
+.dv-acoes .btn svg { width: 1.1em; height: 1.1em; vertical-align: -.18em; margin-right: .3rem; }
+.dv-acoes .btn.icone-so { padding-left: .7rem; padding-right: .7rem; min-width: 2.75rem; }
+.dv-acoes .btn.icone-so svg { margin-right: 0; }
+.dv-acoes .btn.perigo-leve { color: var(--vermelho); }

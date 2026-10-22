@@ -25,6 +25,7 @@
   const contaServicos = (ps) => ps.reduce((s, p) => s + (p.itens || []).filter((i) => i.tipo !== "outros").reduce((n, i) => n + Number(i.qtd || 1), 0), 0);
   const devendo = (ps) => ps.filter((p) => p.forma === "prazo" && !p.pago);
   // dívida cadastrada à mão ("Adicionar devedor"): entra no caixa quando paga, mas não é venda de produto
+  const telBr = (t) => { const n = String(t || "").replace(/\D/g, ""); return n.length >= 10 ? `(${n.slice(0, 2)}) ${n.slice(2, -4)}-${n.slice(-4)}` : n; };
   const ehDivida = (p) => (p.itens || []).some((i) => i.tipo === "divida");
   const formaPaga = (p) => p.pago_forma || (p.forma === "prazo" ? "dinheiro" : p.forma);
   /* Quanto entrou em cada forma (uma venda pode ter dinheiro + Pix + cartão) e a taxa da maquininha. */
@@ -198,12 +199,12 @@
     const itensTxt = (p) => (p.itens || []).map((i) => `${i.qtd > 1 ? i.qtd + "× " : ""}${esc(i.nome)}`).join(", ");
     const extrasPag = (p) => [p.forma === "prazo" ? "à prazo" : "", p.origem === "balcao" ? "balcão" : ""].filter(Boolean).join(" · ");
     // PDF: uma linha de texto por venda
-    const linhas = vendas.map((p) => [quandoTxt(p), esc(p.cliente_nome), ehDivida(p) ? "Dívida" : p.tipo === "produto" ? "Produto" : "Serviço", itensTxt(p),
+    const linhas = vendas.map((p) => [quandoTxt(p), esc(p.cliente_nome), p.parcial_de ? "Parcial" : ehDivida(p) ? "Dívida" : p.tipo === "produto" ? "Produto" : "Serviço", itensTxt(p),
       textoPag(p) + (extrasPag(p) ? " · " + extrasPag(p) : "") + (Number(p.taxa_valor) ? ` · taxa −${C.dinheiro(p.taxa_valor)}` : ""), C.dinheiro(p.total)]);
     // tela: cada forma numa linha (valor junto da forma), taxa à parte
     const pagHtml = (p) => `${listaPag(p).map((x) => `<span class="rel-parte">${FORMAS[x.f] || esc(x.f)} ${C.dinheiro(x.v)}</span>`).join("")}${
       extrasPag(p) ? `<span class="rel-extra">${esc(extrasPag(p))}</span>` : ""}${Number(p.taxa_valor) ? `<span class="rel-extra">taxa −${C.dinheiro(p.taxa_valor)}</span>` : ""}`;
-    const linhasTela = vendas.map((p) => [quandoTxt(p), `${esc(p.cliente_nome)}${ehDivida(p) ? ` <span class="selo alerta">Dívida</span>` : p.tipo === "produto" ? ` <span class="selo">Produto</span>` : ""}`,
+    const linhasTela = vendas.map((p) => [quandoTxt(p), `${esc(p.cliente_nome)}${p.parcial_de ? ` <span class="selo alerta">Parcial</span>` : ehDivida(p) ? ` <span class="selo alerta">Dívida</span>` : p.tipo === "produto" ? ` <span class="selo">Produto</span>` : ""}`,
       itensTxt(p), pagHtml(p), C.dinheiro(p.total),
       `<button class="btn mini sec btn-excluir" data-excluir="${p.id}" aria-label="Excluir venda de ${esc(p.cliente_nome)}">${U.icone("lixeira")}Excluir</button>`]);
     const resumo = { titulo, de, ate, vendas, cortes, prods, real, linhas, pix: somaPix(vendas), din: somaDin(vendas), deb: somaDeb(vendas), cred: somaCred(vendas), taxa: somaTaxa(vendas) };
@@ -273,13 +274,19 @@
         return `<div class="devedor${atrasado ? " atrasado" : ""}" data-id="${p.id}">
           <div class="dv-info"><b>${esc(p.cliente_nome)}</b> <span class="selo ${atrasado ? "erro" : "alerta"}">${atrasado ? "Inadimplente" : "Devendo"}</span>
             <div><b>${C.dinheiro(p.total)}</b> · ${(p.itens || []).map((i) => esc(i.nome)).join(", ")}</div>
-            <div class="pequeno suave">Vencimento ${esc(br(p.prazo_data))} · ${atrasado ? `atrasado há ${-p.dias} dia(s)` : p.dias === 0 ? "vence hoje" : `faltam ${p.dias} dia(s)`}${p.cliente_whatsapp ? " · " + esc(p.cliente_whatsapp) : ""}</div></div>
-          <div class="dv-acoes"><button class="btn" data-a="pago">Pago</button>${atrasado ? `<button class="btn sec" data-a="cobrar">Efetuar cobrança</button>` : ""}</div></div>`;
+            ${Number(p.abatido) ? `<div class="pequeno">Já pagou <b>${C.dinheiro(p.abatido)}</b> de ${C.dinheiro(Number(p.total) + Number(p.abatido))} · falta <b>${C.dinheiro(p.total)}</b></div>` : ""}
+            <div class="pequeno suave">Vencimento ${esc(br(p.prazo_data))} · ${atrasado ? `atrasado há ${-p.dias} dia(s)` : p.dias === 0 ? "vence hoje" : `faltam ${p.dias} dia(s)`}${p.cliente_whatsapp ? " · " + esc(telBr(p.cliente_whatsapp)) : ""}</div></div>
+          <div class="dv-acoes"><button class="btn" data-a="pago"${ro ? " disabled" : ""}>Pago</button>
+            ${p.cliente_whatsapp ? `<button class="btn sec" data-a="cobrar">${U.icone("zap")}${atrasado ? "Efetuar cobrança" : "Cobrar no WhatsApp"}</button>` : ""}
+            <button class="btn sec icone-so" data-a="parcial" title="Pagou uma parte" aria-label="Pagou uma parte"${ro ? " disabled" : ""}>${U.icone("lapis")}</button>
+            <button class="btn sec icone-so perigo-leve" data-a="apagar" title="Apagar registro" aria-label="Apagar registro"${ro ? " disabled" : ""}>${U.icone("lixeira")}</button></div></div>`;
       }).join("") : `<p class="suave pequeno">Ninguém devendo. 🎉</p>`}</section>`;
     $("#add-devedor", el).onclick = adicionarDevedor;
     $$(".devedor [data-a]", el).forEach((bt) => (bt.onclick = () => {
       const p = lista.find((x) => x.id === bt.closest(".devedor").dataset.id);
       if (bt.dataset.a === "cobrar") return cobrar(p);
+      if (bt.dataset.a === "parcial") return parcial(p);
+      if (bt.dataset.a === "apagar") return apagar(p);
       pagar(p);
     }));
   }
@@ -310,9 +317,39 @@
     if (window.CLIENTES && m) window.CLIENTES.ligar(m, "#dv-nome", "#dv-zap");
     if (await promessa) { secao = "inadimplencia"; await tela(corpoAtual); }
   }
+  /* lápis: pagou só uma parte — o que foi pago entra no caixa de hoje e a dívida diminui */
+  async function parcial(p) {
+    const ok = await U.modal("Pagou uma parte", `
+      <p><b>${esc(p.cliente_nome)}</b> deve <b>${C.dinheiro(p.total)}</b>.</p>
+      <div class="campo"><label for="pc-valor">Quanto foi pago agora (R$)</label><input id="pc-valor" inputmode="decimal" placeholder="0,00"></div>
+      <p class="pequeno suave">Se pagou tudo, use o botão <b>Pago</b>.</p>`, [
+      { rotulo: "Cancelar", classe: "sec", valor: false },
+      { rotulo: "Continuar", antes: (m) => {
+        const v = C.lerPreco($("#pc-valor", m).value);
+        if (!(v > 0)) { U.aviso("Informe quanto foi pago.", "erro"); return false; }
+        if (v >= Number(p.total)) { U.aviso("Esse valor quita a dívida: use o botão Pago.", "erro"); return false; }
+        p._parcial = v;
+      } },
+    ]);
+    if (!ok || !p._parcial) return;
+    const valor = p._parcial;
+    const r = await window.BALCAO.receberPedido(valor, "Pagamento parcial", `<b>${esc(p.cliente_nome)}</b> pagou ${C.dinheiro(valor)} de ${C.dinheiro(p.total)}. Como foi pago?`, window.BALCAO.cfgDaBarbearia(A().b()));
+    if (!r) return;
+    try {
+      const res = await A().S.rpc("prazo_abater", { p_id: p.id, p_pagamentos: r.pagamentos });
+      U.aviso(`Recebido ${C.dinheiro(res.pago)} · falta ${C.dinheiro(res.falta)}${r.troco ? ` · troco ${C.dinheiro(r.troco)}` : ""}.`);
+      await tela(corpoAtual);
+    } catch (err) { U.aviso(err.message, "erro"); }
+  }
+  /* lixeira: lançado por engano — apaga o registro (NÃO conta como pago) */
+  async function apagar(p) {
+    if (!(await U.confirmar("Apagar registro", `Apagar a dívida de <b>${esc(p.cliente_nome)}</b> (${C.dinheiro(p.total)})? Use só se foi lançada por engano: o valor <b>não</b> entra como pago.${Number(p.abatido) ? ` O que ele já pagou (${C.dinheiro(p.abatido)}) continua no caixa.` : ""}`, "Apagar", true))) return;
+    try { await A().S.rpc("venda_excluir", { p_id: p.id }); U.aviso("Registro apagado."); await tela(corpoAtual); }
+    catch (err) { U.aviso(err.message, "erro"); }
+  }
   function mensagemCobranca(p) {
     const pix = d7.pix ? `\nPix (${PIX.NOMES[d7.pix.tipo]}): ${PIX.mostrarChave(d7.pix.tipo, d7.pix.chave)} — ${d7.pix.titular}` : "";
-    return `Olá, ${p.cliente_nome.split(" ")[0]}! Aqui é da *${d7.barbearia}*.\n\nConsta em aberto o valor de *${C.dinheiro(p.total)}* referente a ${(p.itens || []).map((i) => i.tipo === "divida" && i.nome === "Dívida anterior" ? "dívida anterior" : i.nome).join(", ")}` +
+    return `Olá, ${p.cliente_nome.split(" ")[0]}! Aqui é da *${d7.barbearia}*.\n\nConsta em aberto o valor de *${C.dinheiro(p.total)}*${Number(p.abatido) ? ` (você já pagou ${C.dinheiro(p.abatido)})` : ""} referente a ${(p.itens || []).map((i) => i.tipo === "divida" && i.nome === "Dívida anterior" ? "dívida anterior" : i.nome).join(", ")}` +
       `${p.finalizado_em ? ` do dia ${br(ymd(p.finalizado_em))}` : ""}, com vencimento em ${br(p.prazo_data)}.\n\nVocê pode pagar no balcão ou por Pix.${pix}\n\nObrigado!`;
   }
   function cobrar(p) {
