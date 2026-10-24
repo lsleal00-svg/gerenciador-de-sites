@@ -1,0 +1,8 @@
+KIT DE REDIRECIONAMENTO — vai num repositório PÚBLICO com o MESMO NOME do repositório atual.
+Serve para os links e QR Codes antigos (github.io) continuarem funcionando, levando o cliente
+para o endereço novo no Cloudflare.
+
+1. Abra destino.js e troque https://SEU-PROJETO.pages.dev/ pelo endereço novo (com / no final).
+2. Suba TODOS estes arquivos, mantendo as pastas app/ e c/.
+3. Settings → Pages → Branch: main / (root) → Save.
+Não coloque mais nada aqui: este repositório fica público, mas não tem nenhum código do sistema.
